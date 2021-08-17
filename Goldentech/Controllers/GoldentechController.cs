@@ -39,7 +39,7 @@ namespace Goldentech.Controllers
             {
                   return ErrorResponse(exc);
             }
-            return null;
+         
         }
         [Route("ReadBusinessPartners"), HttpPost]
         public async Task<IActionResult> ReadBusinessPartners([FromBody] GetItemsReq getItemsReq)
@@ -53,7 +53,7 @@ namespace Goldentech.Controllers
             {
                   return ErrorResponse(exc);
             }
-            return null;
+           
         }
         [Route("AddDocument"), HttpPost]
         public async Task<IActionResult> AddDocument([FromBody] DocumentReq model)
@@ -108,7 +108,7 @@ namespace Goldentech.Controllers
             {
                   return ErrorResponse(exc);
             }
-            return null;
+           
         }
        
         [Route("DeleteDocument"), HttpPost]
@@ -116,28 +116,38 @@ namespace Goldentech.Controllers
         {
             try
             {
+                if (!(model.DocumentType == "Sales"|| model.DocumentType == "Purchase"))
+                    return ErrorResponse(Errors.NotValidDocumentType);
+             
                 var result = await goldentechService.DeleteDocument(model);
+                if (result == null)
+                    return ErrorResponse(Errors.DocumentNotExist);
                 return Ok(result);
             }
             catch (Exception exc)
             {
                   return ErrorResponse(exc);
             }
-            return null;
+          
         }
         [Route("GetDocument"), HttpPost]
         public async Task<IActionResult> GetDocument([FromBody] DocumentReq model)
         {
             try
             {
+
+                if (!(model.DocumentType == "Sales" || model.DocumentType == "Purchase"))
+                    return ErrorResponse(Errors.NotValidDocumentType);
                 var result = await goldentechService.GetDocument(model);
+                if (result == null)
+                    return ErrorResponse(Errors.DocumentNotExist);
                 return Ok(result);
             }
             catch (Exception exc)
             {
                   return ErrorResponse(exc);
             }
-            return null;
+           
         }
     }
 }

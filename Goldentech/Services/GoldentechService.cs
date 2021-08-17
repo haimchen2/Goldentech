@@ -30,21 +30,29 @@ namespace Goldentech.Services
         {
             try
             {
-                var allData= this._ApplicationSqlDbContext.Set<Items>();
-                var    data = getItemsReq.filterBy == null? allData: this._ApplicationSqlDbContext.Items.FromSqlRaw<Items>($"select * from items where  {getItemsReq.filterBy.key} = '{ getItemsReq.filterBy.value }'");
-               
-                if (getItemsReq.paging == null)
-                    return new GetItemsRes<Items> { items = data };
-          
-                var pageSize = getItemsReq.paging.pageSize;
-                var pagingData = data.Skip(pageSize * (getItemsReq.paging.pageNum - 1)).Take(pageSize);
-                var pagesCount = data.Count() % getItemsReq.paging.pageSize == 0 ? data.Count() / getItemsReq.paging.pageSize : data.Count() / getItemsReq.paging.pageSize + 1;
-                return new GetItemsRes<Items> { items = pagingData, pages= pagesCount };
+              
+                    var  allData= this._ApplicationSqlDbContext.Set<Items>();
+                    var data = getItemsReq.filterBy == null ? allData : this._ApplicationSqlDbContext.Items.FromSqlRaw<Items>($"select * from items where  {getItemsReq.filterBy.key} = '{ getItemsReq.filterBy.value }'");
+                
+                    if (getItemsReq.paging == null)
+                        return new GetItemsRes<Items> { items = data };
+
+                    var pageSize = getItemsReq.paging.pageSize;
+                    var pagingData = data.Skip(pageSize * (getItemsReq.paging.pageNum - 1)).Take(pageSize);
+                    var pagesCount = data.Count() % getItemsReq.paging.pageSize == 0 ? data.Count() / getItemsReq.paging.pageSize : data.Count() / getItemsReq.paging.pageSize + 1;
+
+                await Task.Run(() =>
+                {
+                    
+                });
+
+                return new GetItemsRes<Items> { items = pagingData, pages = pagesCount };
             }
             catch (Exception ex)
             {
                  throw ex;
             }
+          //  return null;
         }
 
         public async Task<GetItemsRes<BusinessPartners>> GetBusinessPartners(GetItemsReq getItemsReq)
@@ -78,21 +86,26 @@ namespace Goldentech.Services
         {
             try
             {
-                return this._ApplicationSqlDbContext.BusinessPartners.Where(x => x.BPCode == model.BPCode).FirstOrDefault();
+
+                return await this._ApplicationSqlDbContext.BusinessPartners.Where(x => x.BPCode == model.BPCode).FirstOrDefaultAsync();
             }
             catch {
                 return null;
             }
           
         }
+
         public async Task<bool> ItemsValidtion (DocumentReq model)
         {
             try
             {
+                Items res = null;
                 foreach (var i in model.ordersLines)
                 {
-                    if(!this._ApplicationSqlDbContext.Items.Where(x => x.ItemCode == i.ItemCode).FirstOrDefault().Active)
-                    return false;
+                     res = await this._ApplicationSqlDbContext.Items.Where(x => x.ItemCode == i.ItemCode).FirstOrDefaultAsync();
+
+                    if(!res.Active)
+                          return false;
                 }
                 return true;
             }
@@ -113,7 +126,7 @@ namespace Goldentech.Services
                     {
                         BPCode = model.BPCode,
                         CreatedBy = model.CreatedBy,
-                        LastUpdatedBy = model.CreatedBy
+                       // LastUpdatedBy = model.CreatedBy
                     };
 
                     this._ApplicationSqlDbContext.SaleOrders.Add(saleOrder);
@@ -130,7 +143,8 @@ namespace Goldentech.Services
                         
                         this._ApplicationSqlDbContext.SaleOrdersLines.Add(saleOrdersLines);
                         this._ApplicationSqlDbContext.SaveChanges();
-                        foreach (var j in i.Comments)
+                        if (i.Comments != null && i.Comments.Count > 0)
+                            foreach (var j in i.Comments)
                         {
                             var saleOrdersLinesComments = new SaleOrdersLinesComments()
                             {
@@ -191,7 +205,7 @@ namespace Goldentech.Services
 
                     if (!string.IsNullOrEmpty(model.BPCode)) saleOrder.BPCode = model.BPCode;
                     if (model.CreatedBy != null) saleOrder.CreatedBy = model.CreatedBy;
-                    if (model.LastUpdatedBy != null) saleOrder.LastUpdatedBy = model.CreatedBy;
+                     saleOrder.LastUpdatedBy = model.CreatedBy;
 
                     this._ApplicationSqlDbContext.SaleOrders.Update(saleOrder);
                     this._ApplicationSqlDbContext.SaveChanges();
@@ -203,14 +217,14 @@ namespace Goldentech.Services
 
                         this._ApplicationSqlDbContext.SaleOrdersLines.Update(ordersLine);
                         this._ApplicationSqlDbContext.SaveChanges();
-
+                        if (i.Comments!=null && i.Comments.Count>0)
                         foreach (var j in i.Comments)
                         {
-                            var saleOrdersLinesComments = new SaleOrdersLinesComments()
-                            {
-                                Comment = j.Comment
-                            };
-                            this._ApplicationSqlDbContext.SaleOrdersLinesComments.Update(saleOrdersLinesComments);
+                                var comment = this._ApplicationSqlDbContext.SaleOrdersLinesComments.Where(x => x.DocID == model.DocumentId && x.LineID == saleOrder.ID).FirstOrDefault();
+                                if (comment == null) continue;
+                                comment.Comment = j.Comment;
+                         
+                            this._ApplicationSqlDbContext.SaleOrdersLinesComments.Update(comment);
                             this._ApplicationSqlDbContext.SaveChanges();
                         }
 
@@ -230,14 +244,45 @@ namespace Goldentech.Services
                     this._ApplicationSqlDbContext.PurchaseOrders.Update(purchaseOrder);
                     this._ApplicationSqlDbContext.SaveChanges();
 
+                    //delete items that removed
+                    foreach (var i in this._ApplicationSqlDbContext.PurchaseOrdersLines.Where(x => x.DocID== model.DocumentId).ToList())
+                    {
+                    var  isItemExist=   model.ordersLines.Where(x => x.ItemCode == i.ItemCode).FirstOrDefault();
+                        if (isItemExist==null)
+                        {
+
+                            this._ApplicationSqlDbContext.Attach(i);
+                            this._ApplicationSqlDbContext.PurchaseOrdersLines.Remove(i);
+                            this._ApplicationSqlDbContext.SaveChanges();
+
+                        }
+
+                    }
                     foreach (var i in model.ordersLines)
                     {
                         var ordersLine = this._ApplicationSqlDbContext.PurchaseOrdersLines.Where(x => x.DocID == purchaseOrder.ID && x.ItemCode==i.ItemCode).FirstOrDefault();
+                        //add new items
+                        if (ordersLine==null)
+                        {
+                            var purchaseOrdersLines = new PurchaseOrdersLines()
+                            {
+                                DocID = model.DocumentId,
+                                ItemCode = i.ItemCode,
+                                Quantity = i.Quantity
+                            };
+
+                            this._ApplicationSqlDbContext.PurchaseOrdersLines.Add(purchaseOrdersLines);
+                            this._ApplicationSqlDbContext.SaveChanges();
+                            continue;
+                        }
+                       
+
                         ordersLine.Quantity = i.Quantity;
                         this._ApplicationSqlDbContext.PurchaseOrdersLines.Update(ordersLine);
                         this._ApplicationSqlDbContext.SaveChanges();
 
                     }
+
                 }
                 var res = _mapper.Map<DocumentRes>(model);
                 return res;
@@ -324,7 +369,7 @@ namespace Goldentech.Services
                     res.BPName = this._ApplicationSqlDbContext.BusinessPartners.Where(x => x.BPCode == saleOrder.BPCode).FirstOrDefault().BPName;
                     res.Active = this._ApplicationSqlDbContext.BusinessPartners.Where(x => x.BPCode == saleOrder.BPCode).FirstOrDefault().Active;
                     res.CreatedByFullName = this._ApplicationSqlDbContext.Users.Where(x => x.ID == saleOrder.CreatedBy).FirstOrDefault().FullName;
-                    res.LastUpdatedByFullName = this._ApplicationSqlDbContext.Users.Where(x => x.ID == saleOrder.LastUpdatedBy).FirstOrDefault().FullName;
+                    res.LastUpdatedByFullName = (this._ApplicationSqlDbContext.Users.Where(x => x.ID == saleOrder.LastUpdatedBy).FirstOrDefault() != null) ? this._ApplicationSqlDbContext.Users.Where(x => x.ID == saleOrder.LastUpdatedBy).FirstOrDefault().FullName:"";
                     res.BPCode = saleOrder.BPCode;
 
                     var ordersLines = this._ApplicationSqlDbContext.SaleOrdersLines.Where(x => x.DocID == model.DocumentId);
@@ -359,7 +404,7 @@ namespace Goldentech.Services
                     res.BPName = this._ApplicationSqlDbContext.BusinessPartners.Where(x => x.BPCode == purchaseOrder.BPCode).FirstOrDefault().BPName;
                     res.Active = this._ApplicationSqlDbContext.BusinessPartners.Where(x => x.BPCode == purchaseOrder.BPCode).FirstOrDefault().Active;
                     res.CreatedByFullName = this._ApplicationSqlDbContext.Users.Where(x => x.ID == purchaseOrder.CreatedBy).FirstOrDefault().FullName;
-                    res.LastUpdatedByFullName = this._ApplicationSqlDbContext.Users.Where(x => x.ID == purchaseOrder.LastUpdatedBy).FirstOrDefault().FullName;
+                    res.LastUpdatedByFullName = (this._ApplicationSqlDbContext.Users.Where(x => x.ID == purchaseOrder.LastUpdatedBy).FirstOrDefault()!=null) ?this._ApplicationSqlDbContext.Users.Where(x => x.ID == purchaseOrder.LastUpdatedBy).FirstOrDefault().FullName:"";
                     res.BPCode = purchaseOrder.BPCode;
                     
                     var ordersLines = this._ApplicationSqlDbContext.PurchaseOrdersLines.Where(x => x.DocID == model.DocumentId);
